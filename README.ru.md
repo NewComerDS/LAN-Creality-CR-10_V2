@@ -1,8 +1,8 @@
 [English](README.md) | **Русский**
 
-# cp81 - Creality Print 7.x для «старого» принтера на Marlin (проверено: CR-10 V2)
+# cp81 - Подключение «старого» принтера на Marlin к Creality Print 7.x по сети (проверено: CR-10 V2)
 
-Creality Print 7.1 умеет работать по локальной сети со старыми принтерами Creality (через WiFi-box), но «голый» CR-10 V2
+Creality Print 7.1+ умеет работать по локальной сети со старыми принтерами Creality (через WiFi-box), но «голый» CR-10 V2
 этот протокол не понимает. **cp81 прикидывается таким принтером**: небольшая служба на Python на Raspberry Pi / Orange Pi,
 подключённой к принтеру по USB, переводит команды Creality Print в G-code для Marlin.
 
