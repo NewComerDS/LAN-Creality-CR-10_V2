@@ -1,0 +1,14 @@
+[Unit]
+Description=cp81 ftp: G-code upload for Creality Print
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cp81
+ExecStart=/usr/bin/python3 /opt/cp81/cp81_ftp.py --root /opt/cp81/ftp_root --allow 127.0.0.1,192.168.1.50
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

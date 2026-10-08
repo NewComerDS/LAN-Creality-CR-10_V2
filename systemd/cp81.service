@@ -1,0 +1,15 @@
+[Unit]
+Description=cp81 bridge: Creality Print <-> Marlin printer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cp81
+# first run WITHOUT --print-enable: G-code is only checked, nothing is printed
+ExecStart=/usr/bin/python3 /opt/cp81/cp81.py --serial /dev/ttyUSB0 --ftp-root /opt/cp81/ftp_root --allow 127.0.0.1,192.168.1.50 --live --print-enable
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
