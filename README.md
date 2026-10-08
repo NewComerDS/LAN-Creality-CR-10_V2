@@ -121,3 +121,7 @@ noncommercial purposes** (hobby, personal, research, education, charity). **Sell
 allowed** without the written permission of the author. Keep the copyright notice and a copy of the license when you
 pass it on. The legally binding text is the file `LICENSE`.
 Note: this is a "source available" license, not an OSI-approved open source license.
+
+## newcomerds
+
+[![Boosty](https://img.shields.io/badge/Boosty-%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B0%D1%82%D1%8C-FF6B35?style=for-the-badge&logo=boosty)](https://boosty.to/newcomerds/donate)
