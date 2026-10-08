@@ -6,6 +6,8 @@ Creality Print 7.1 can talk to the old Creality WiFi-box printers over the LAN, 
 speak that protocol. **cp81 pretends to be such a printer** (a small Python service on a Raspberry Pi / Orange Pi
 connected to the printer by USB) and translates what Creality Print sends into G-code for Marlin.
 
+<img width="1591" height="849" alt="2026-10-08 122314" src="https://github.com/user-attachments/assets/e4daf53c-8293-4020-8692-eb3e6dcec2e7" />
+
 ```
 Creality Print (PC) --HTTP :81--> cp81.py ----USB serial----> CR-10 V2 (Marlin)
                     --FTP  :21--> cp81_ftp.py (uploaded G-code in ./ftp_root, streamed by cp81.py)
