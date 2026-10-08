@@ -6,6 +6,8 @@ Creality Print 7.1 умеет работать по локальной сети 
 этот протокол не понимает. **cp81 прикидывается таким принтером**: небольшая служба на Python на Raspberry Pi / Orange Pi,
 подключённой к принтеру по USB, переводит команды Creality Print в G-code для Marlin.
 
+<img width="1591" height="849" alt="2026-10-08 122314" src="https://github.com/user-attachments/assets/82df7ba3-efc8-454a-9987-3b3c6976e6d1" />
+
 ```
 Creality Print (ПК) --HTTP :81--> cp81.py ----USB serial----> CR-10 V2 (Marlin)
                     --FTP  :21--> cp81_ftp.py (загруженный G-code лежит в ./ftp_root, cp81.py печатает его построчно)
