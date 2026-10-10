@@ -115,6 +115,36 @@ Autostart: `systemd/*.service` (they assume the files are in `/opt/cp81`; adapt 
 `cp81.py` bridge | `cp81_ftp.py` FTP server | `README.ru.md` Russian version | `tools/ftp_probe.py` throw-away FTP server that logs everything
 (useful to see what Creality Print does) | `examples/air_test.gcode` no-heat test print | `systemd/` unit files
 
+## Telegram Notifications
+
+In version 3.2.0, the function for notifying about completion or printing issues has been added. 
+
+How to enable
+In Telegram, find @BotFather → /newbot → you will receive a token in the form of 123456:ABC....
+Write any message to your new bot (for example, /start), then find out the chat_id:
+   curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates"
+
+In the answer, find "chat":{"id":<number>....
+3. Place the settings in a file outside the project, accessible only by root:
+
+ in /etc/cp81.env
+
+   CP81_TG_TOKEN=123456:ABC...
+   CP81_TG_CHAT=123456789
+
+   sudo chmod 600 /etc/cp81.env
+
+4. In /etc/systemd/system/cp81.service, add the following line to the [Service] section:
+
+   EnvironmentFile=/etc/cp81.env
+
+then run sudo systemctl daemon-reload && sudo systemctl restart cp81 (not during printing).
+5. Test the sending without launching the bridge:
+
+   sudo bash -c 'set -a; . /etc/cp81.env; set +a; python3 /var/www/cp/cp81.py --tg-test'
+
+It should display “Telegram test message sent,” and a message will appear in the chat. In the log, at startup, there will be the line “Telegram notifications: ON.”
+
 ## License
 
 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
