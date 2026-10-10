@@ -1,6 +1,6 @@
-**English** | [Русский](README.ru.md)
+[Русский](README.ru.md) | **English**
 
-# cp81 - Creality Print 7.x for an "old" Marlin printer (tested: CR-10 V2)
+# cp81 - Connecting an “old” printer running Marlin to Creality Print 7.x via the network. (tested: CR-10 V2)
 
 Creality Print 7.1 can talk to the old Creality WiFi-box printers over the LAN, but a bare CR-10 V2 does not
 speak that protocol. **cp81 pretends to be such a printer** (a small Python service on a Raspberry Pi / Orange Pi
