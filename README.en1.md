@@ -1,4 +1,4 @@
-[Русский](README.ru.md) | **English**
+[Русский](README.md) | **English**
 
 # cp81 - Connecting an “old” printer running Marlin to Creality Print 7.x via the network. (tested: CR-10 V2)
 
