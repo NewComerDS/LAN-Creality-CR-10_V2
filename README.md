@@ -130,6 +130,7 @@ python3 cp81.py --serial /dev/ttyUSB0 --allow 127.0.0.1,<IP ПК> --live --print
    в /etc/cp81.env
    
    CP81_TG_TOKEN=123456:ABC...
+   
    CP81_TG_CHAT=123456789
    
    sudo chmod 600 /etc/cp81.env
