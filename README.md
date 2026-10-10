@@ -1,4 +1,4 @@
-**Русский** | [English](README.md)
+**Русский** | [English](README.en.md)
 
 # cp81 - Подключение «старого» принтера на Marlin к Creality Print 7.x по сети (проверено: CR-10 V2)
 
