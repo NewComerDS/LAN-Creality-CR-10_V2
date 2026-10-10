@@ -16,9 +16,12 @@ Install:  sudo apt install python3-serial      (or: pip install pyserial)
 Run:      python3 cp81.py --serial /dev/ttyUSB0
           python3 cp81.py --serial /dev/ttyUSB0 --live
 """
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 # Changelog (earlier entries reconstructed from the chat history)
+#  3.2.0  Telegram notifications (print started / done / failed / stopped), configured only through environment
+#         variables CP81_TG_TOKEN, CP81_TG_CHAT [, CP81_TG_EVENTS, CP81_TG_LANG, CP81_TG_API]; sending runs in its own
+#         thread and can never delay or break a print; --tg-test sends one test message
 #  3.1.0  BREAKING: the default allow-list is only 127.0.0.1 and the default FTP folder is ./ftp_root next to
 #         the script -> existing installations must start with --allow 127.0.0.1,<PC IP>
 #         settings that were hard-coded for one installation are now options (defaults unchanged):
@@ -62,9 +65,13 @@ import os
 import posixpath
 import queue
 import re
+import sys
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -267,6 +274,113 @@ def preflight(path, homed):
     return a, problems
 
 
+# ------------------------------------------------------------------ telegram notifications
+def fmt_duration(sec):
+    sec = int(max(0, sec))
+    return "%d:%02d:%02d" % (sec // 3600, sec % 3600 // 60, sec % 60)
+
+
+class Notifier:
+    """Telegram messages about the print. Settings come ONLY from environment variables (never from the code or
+    the repository):  CP81_TG_TOKEN (bot token), CP81_TG_CHAT (chat id), optional CP81_TG_EVENTS
+    (default "done,failed,stopped"; add "started"), CP81_TG_LANG (ru|en), CP81_TG_API (API base URL).
+    notify() only puts a text into a queue - a separate thread sends it, so the print engine is never delayed."""
+
+    RETRY_DELAYS = (0, 5, 30, 120)            # seconds before each attempt
+    TEXTS = {
+        "ru": {"started": "▶️ Печать начата: {name}",
+               "done": "✅ Печать завершена: {name}\nВремя печати: {elapsed}",
+               "failed": "❌ Печать прервана из-за ошибки: {name}\n{error}\nВыполнено {progress:.0f} %, прошло {elapsed}",
+               "stopped": "⏹ Печать остановлена: {name}\nВыполнено {progress:.0f} %, прошло {elapsed}",
+               "test": "🔔 cp81 v{version}: уведомления работают"},
+        "en": {"started": "▶️ Print started: {name}",
+               "done": "✅ Print finished: {name}\nPrint time: {elapsed}",
+               "failed": "❌ Print aborted by an error: {name}\n{error}\nDone {progress:.0f} %, elapsed {elapsed}",
+               "stopped": "⏹ Print stopped: {name}\nDone {progress:.0f} %, elapsed {elapsed}",
+               "test": "🔔 cp81 v{version}: notifications work"},
+    }
+
+    def __init__(self):
+        env = os.environ.get
+        self.token = env("CP81_TG_TOKEN", "").strip()
+        self.chat = env("CP81_TG_CHAT", "").strip()
+        self.api = env("CP81_TG_API", "https://api.telegram.org").strip().rstrip("/")
+        self.lang = env("CP81_TG_LANG", "ru").strip().lower()
+        if self.lang not in self.TEXTS:
+            self.lang = "en"
+        self.events = {x.strip() for x in env("CP81_TG_EVENTS", "done,failed,stopped").split(",") if x.strip()}
+        self.enabled = bool(self.token and self.chat)
+        self.q = queue.Queue(maxsize=20)
+        if self.enabled:
+            threading.Thread(target=self._run, daemon=True).start()
+
+    def _mask(self, text):
+        return text.replace(self.token, "***") if self.token else text
+
+    def text(self, event, **kw):
+        kw.setdefault("version", __version__)
+        return self.TEXTS[self.lang][event].format(**kw)
+
+    def send_now(self, text):
+        """one synchronous attempt -> (ok, reason); never raises"""
+        try:
+            data = urllib.parse.urlencode({"chat_id": self.chat, "text": text,
+                                           "disable_web_page_preview": "true"}).encode()
+            req = urllib.request.Request(f"{self.api}/bot{self.token}/sendMessage", data=data)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return bool(json.loads(r.read().decode()).get("ok")), ""
+        except urllib.error.HTTPError as e:
+            try:
+                why = json.loads(e.read().decode()).get("description", "")
+            except Exception:
+                why = ""
+            return False, self._mask(f"HTTP {e.code} {why}".strip())
+        except Exception as e:
+            return False, self._mask(repr(e))
+
+    def _run(self):
+        while True:
+            text = self.q.get()
+            reason = ""
+            for delay in self.RETRY_DELAYS:
+                time.sleep(delay)
+                ok, reason = self.send_now(text)
+                if ok:
+                    break
+            else:
+                log(f"Telegram: message could not be delivered ({reason})")
+
+    def notify(self, event, **kw):
+        if not self.enabled or event not in self.events:
+            return
+        try:
+            self.q.put_nowait(self.text(event, **kw))
+        except queue.Full:
+            log("Telegram: queue full, message dropped")
+        except Exception as e:                     # a notification problem must never reach the print engine
+            log(f"Telegram: could not build the message: {e!r}")
+
+    def job_finished(self, job):
+        ev = {job.DONE: "done", job.FAILED: "failed", job.STOPPED: "stopped"}.get(job.state)
+        if ev:
+            st = job.status()
+            self.notify(ev, name=os.path.basename(job.path), elapsed=fmt_duration(st["elapsed"]),
+                        progress=st["progress"], error=job.error or "")
+
+
+NOTIFIER = Notifier()
+
+
+def tg_test():
+    n = NOTIFIER
+    if not n.enabled:
+        print("CP81_TG_TOKEN and CP81_TG_CHAT are not set in the environment")
+        return 1
+    ok, why = n.send_now(n.text("test"))
+    print("Telegram test message sent" if ok else f"Telegram test FAILED: {why}")
+    return 0 if ok else 1
+
+
 # ------------------------------------------------------------------ printer
 class PrinterFault(Exception):
     """the printer reported an error / is in a state in which a print must not go on"""
@@ -462,6 +576,7 @@ class Printer:
             if not self.connected:
                 return False, "printer not connected"
         self.job = PrintJob(self, local, printer_path)
+        NOTIFIER.notify("started", name=os.path.basename(printer_path))
         return True, ""
 
     def job_active(self):
@@ -729,6 +844,7 @@ class PrintJob:
             pass
         log(f"PRINT {self.NAMES[state].upper()}" + (f": {error}" if error else "") +
             f" | {self.lines_sent} lines sent, {self.status()['progress']:.1f} %" + self._gap_text())
+        NOTIFIER.job_finished(self)
 
     def abort(self, reason):
         """port is gone - nothing can be sent any more"""
@@ -1099,6 +1215,7 @@ def main():
                     help="folder served by cp81_ftp.py; print=<file> is looked up there")
     ap.add_argument("--port", type=int, default=HTTP_PORT, help="HTTP port of the fake printer (Creality Print expects 81)")
     ap.add_argument("--live", action="store_true", help="actually send commands to the printer")
+    ap.add_argument("--tg-test", action="store_true", help="send one Telegram test message and exit")
     ap.add_argument("--version", action="version", version=f"cp81 {__version__}")
     ap.add_argument("--verbose", action="store_true", help="log every Info poll from CP and raw M114 replies")
     ap.add_argument("--print-enable", action="store_true",
@@ -1106,6 +1223,8 @@ def main():
     ap.add_argument("--home-on-start", action="store_true",
                     help="run one G28 (home all axes) after the first serial connect; needs --live")
     a = ap.parse_args()
+    if a.tg_test:
+        sys.exit(tg_test())
     LIVE, SERIAL_PORT, HOME_ON_START, VERBOSE = a.live, a.serial, a.home_on_start, a.verbose
     PRINT_ENABLE = a.print_enable and a.live
     ALLOWED_IPS = {x.strip() for x in a.allow.split(",") if x.strip()}
@@ -1121,6 +1240,8 @@ def main():
                 log("WATCHDOG: worker thread is dead -> exiting so that systemd restarts the service")
                 os._exit(1)
     threading.Thread(target=watchdog, daemon=True).start()
+    log("Telegram notifications: " + (f"ON, events {sorted(NOTIFIER.events)}, language {NOTIFIER.lang}"
+                                       if NOTIFIER.enabled else "off (CP81_TG_TOKEN / CP81_TG_CHAT not set)"))
     log(f"cp81 v{__version__} | HTTP on 0.0.0.0:{HTTP_PORT} | mode: {'LIVE' if LIVE else 'READ-ONLY'}"
         f" | host printing: {'ENABLED' if PRINT_ENABLE else 'off (dry run)'}")
     ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), Handler).serve_forever()
