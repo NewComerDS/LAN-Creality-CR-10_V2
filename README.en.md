@@ -120,9 +120,7 @@ Autostart: `systemd/*.service` (they assume the files are in `/opt/cp81`; adapt 
 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
 (`PolyForm-Noncommercial-1.0.0`). In plain words: you may use, copy, modify and share this project **free of charge for
 noncommercial purposes** (hobby, personal, research, education, charity). **Selling it, or using it commercially, is not
-allowed** without the written permission of the author. Keep the copyright notice and a copy of the license when you
-pass it on. The legally binding text is the file `LICENSE`.
-Note: this is a "source available" license, not an OSI-approved open source license.
+allowed** without the written permission of the author.
 
 ## newcomerds
 
