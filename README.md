@@ -114,6 +114,36 @@ python3 cp81.py --serial /dev/ttyUSB0 --allow 127.0.0.1,<IP ПК> --live --print
 `cp81.py` мост | `cp81_ftp.py` FTP-сервер | `tools/ftp_probe.py` одноразовый FTP-сервер, который логирует всё
 (удобно смотреть, что делает Creality Print) | `examples/air_test.gcode` тестовая печать без нагрева | `systemd/` unit-файлы
 
+## Оповещения в Telegram
+
+В версии 3.2.0 Добавлена функция оповещения завершения или проблем с печатью. 
+
+Как включить
+В Telegram найди @BotFather → /newbot → получишь токен вида 123456:ABC....
+Напиши своему новому боту любое сообщение (например /start), затем узнай chat_id:
+   curl -s "https://api.telegram.org/bot<ТОКЕН>/getUpdates"
+
+В ответе найди "chat":{"id":<число>....
+3. Положи настройки в файл вне проекта, доступный только root:
+
+   в /etc/cp81.env
+   
+   CP81_TG_TOKEN=123456:ABC...
+   CP81_TG_CHAT=123456789
+   
+   sudo chmod 600 /etc/cp81.env
+
+4. В /etc/systemd/system/cp81.service добавь в раздел [Service] строку:
+
+   EnvironmentFile=/etc/cp81.env
+
+затем sudo systemctl daemon-reload && sudo systemctl restart cp81 (не во время печати).
+5. Проверь отправку без запуска моста:
+
+   sudo bash -c 'set -a; . /etc/cp81.env; set +a; python3 /var/www/cp/cp81.py --tg-test'
+
+Должно написать Telegram test message sent, а в чате появится сообщение. В журнале при запуске будет строка Telegram notifications: ON.
+
 ## Лицензия
 
 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
