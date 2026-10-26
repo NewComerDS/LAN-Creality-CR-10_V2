@@ -16,9 +16,14 @@ Install:  sudo apt install python3-serial      (or: pip install pyserial)
 Run:      python3 cp81.py --serial /dev/ttyUSB0
           python3 cp81.py --serial /dev/ttyUSB0 --live
 """
-__version__ = "3.2.0"
+__version__ = "3.2.1"
 
 # Changelog (earlier entries reconstructed from the chat history)
+#  3.2.1  FIX: the board was reset by the bridge itself when the printer did not answer for ~15 s. Typical trigger:
+#         moving the extruder from the printer's own menu - Marlin's M114 waits for an empty move buffer, the
+#         bridge counted 3 time-outs and re-opened the port (opening it pulses DTR = reset). Now: M114 only every
+#         POS_POLL_INTERVAL s with a long time-out, a slow answer is just 'busy', and the port is re-opened only after
+#         DEAD_AFTER s without any byte from the printer.
 #  3.2.0  Telegram notifications (print started / done / failed / stopped), configured only through environment
 #         variables CP81_TG_TOKEN, CP81_TG_CHAT [, CP81_TG_EVENTS, CP81_TG_LANG, CP81_TG_API]; sending runs in its own
 #         thread and can never delay or break a print; --tg-test sends one test message
@@ -100,7 +105,10 @@ MAX_NOZZLE = 260                   # degC, bridge-side hard limit
 MAX_BED = 90                       # degC
 LIMITS = {"X": (0, 300), "Y": (0, 300), "Z": (0, 400)}   # mm
 MAX_FEED = 6000                    # mm/min
-POLL_INTERVAL = 2.0                # s
+POLL_INTERVAL = 2.0                # s, idle polling of the temperatures (M105)
+POS_POLL_INTERVAL = 10.0           # s, idle M114 (it waits for the move buffer to be empty, see changelog 3.2.1)
+POS_POLL_TIMEOUT = 120.0           # s a M114 may take (a long move started from the printer's menu)
+DEAD_AFTER = 120.0                 # s without any byte from the printer before the port is re-opened (= board reset)
 
 LIVE = False                       # set by --live
 # Creality Print's Ie("x"|"y"|"z", 0, ..) greys out the whole move panel for good when the axis
@@ -393,6 +401,8 @@ class Printer:
         self.q = queue.Queue()
         self.lock = threading.Lock()
         self.connected = False
+        self.last_rx = time.time()               # last time any line came from the printer
+        self.next_pos_poll = 0.0
         self.homed = set()
         self.s = {
             "nozzle": 0.0, "nozzle_t": 0.0,
@@ -426,6 +436,7 @@ class Printer:
         with self.lock:
             self.homed.clear()
             self.connected = True
+        self.last_rx = time.time()
         log("serial open:", SERIAL_PORT, BAUD, "- printer answers")
         global HOME_ON_START
         if HOME_ON_START and LIVE:
@@ -460,6 +471,7 @@ class Printer:
             line = self.ser.readline().decode(errors="ignore").strip()
             if not line:
                 continue
+            self.last_rx = time.time()
             out.append(line)
             if line.lower().startswith("error"):
                 log("PRINTER ERROR:", line)
@@ -469,14 +481,21 @@ class Printer:
 
     # --- reading state
     def poll(self):
-        for line in self.send("M105", 5):
+        for line in self.send("M105", 20):
             mt, mb = RE_TEMP_T.search(line), RE_TEMP_B.search(line)
             with self.lock:
                 if mt:
                     self.s["nozzle"], self.s["nozzle_t"] = float(mt.group(1)), float(mt.group(2))
                 if mb:
                     self.s["bed"], self.s["bed_t"] = float(mb.group(1)), float(mb.group(2))
-        reply = self.send("M114", 5)
+        if time.time() < self.next_pos_poll:
+            return
+        t0 = time.time()
+        reply = self.send("M114", POS_POLL_TIMEOUT)
+        self.next_pos_poll = time.time() + POS_POLL_INTERVAL
+        if time.time() - t0 > 5:
+            log(f"printer was busy: M114 answered after {time.time() - t0:.0f} s "
+                f"(a move that was started from the printer's own menu?)")
         if VERBOSE and reply != getattr(self, "_last_m114", None):
             self._last_m114 = reply
             log("M114 raw:", reply)
@@ -599,6 +618,8 @@ class Printer:
     def run_cmd(self, cmd):
         log("->", cmd)
         reply = self.send(cmd, 240 if cmd.startswith("G28") else 30)
+        if cmd.startswith("G"):
+            self.next_pos_poll = 0.0                    # the position changed, ask for it at the next poll
         for l in reply:
             if l != "ok" and not l.startswith("echo:busy"):
                 log("   <-", l)
@@ -620,7 +641,7 @@ class Printer:
                 self.s["feed"] = int(cmd.split("S")[1])
 
     def worker(self):
-        fails = 0
+        fails = 0                                   # (kept for the job path)
         while True:
             if not self.connected:
                 try:
@@ -645,11 +666,12 @@ class Printer:
                 self.poll()
                 fails = 0
             except TimeoutError as e:
-                fails += 1
-                log(f"timeout ({fails}/3):", e)
-                if fails >= 3:                      # only then reopen (that resets the board)
+                quiet = time.time() - self.last_rx
+                if quiet < DEAD_AFTER:
+                    log(f"printer is busy, no answer yet ({quiet:.0f} s of silence) - waiting, port stays open: {e}")
+                else:                               # re-opening the port resets the board - only when it is really silent
+                    log(f"printer silent for {quiet:.0f} s -> re-opening the port (this resets the board)")
                     self.close()
-                    fails = 0
                     time.sleep(3)
             except SERIAL_ERRORS as e:
                 log(f"serial problem: {type(e).__name__}: {e}")
